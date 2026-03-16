@@ -13,7 +13,7 @@
  * %LICENSE%
  */
 
-#include "hal/armv8m/stm32/n6/config.h"
+#include "hal/armv8m/stm32/config.h"
 #include "hal/timer.h"
 #include "hal/interrupts.h"
 #include "hal/spinlock.h"
