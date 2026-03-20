@@ -19,8 +19,10 @@
 #include "hal/types.h"
 #include "hal/pmap.h"
 
-#ifdef __CPU_STM32N6
+#if defined(__CPU_STM32N6)
 #include "include/arch/armv8m/stm32/n6/stm32n6.h"
+#elif defined(__CPU_STM32U3)
+#include "include/arch/armv8m/stm32/u3/stm32u3.h"
 #endif
 
 
@@ -71,7 +73,9 @@ int _stm32_rccGetIPClk(unsigned int ipclk, unsigned int *setting_out);
 u32 _stm32_rccGetCPUClock(void);
 
 
-/* Get frequency of PER (common peripheral) clock in Hz */
+/* Get frequency of PER (common peripheral) clock in Hz.
+ * On STM32U3, returns the PCLKx frequency.
+ */
 u32 _stm32_rccGetPerClock(void);
 
 
@@ -160,6 +164,9 @@ int _stm32_risaf_configRegion(int risaf, u8 region, u32 start, u32 end, u8 privC
 
 
 int _stm32_risaf_init(void);
+
+
+int _stm32_systickInit(u32 interval);
 
 
 void _stm32_init(void);
