@@ -44,6 +44,7 @@
 #define IWDG_BASE   ((void *)0x50003000U)
 #define PWR_BASE    ((void *)0x50030800U)
 #define RCC_BASE    ((void *)0x50030c00U)
+#define RTC_BASE    ((void *)0x50007800U)
 #define SYSCFG_BASE ((void *)0x50040400U)
 #define RAMCFG_BASE ((void *)0x50026000U)
 #define ICB_BASE    ((void *)0xe000e000U)
@@ -59,6 +60,7 @@ static struct {
 	volatile u32 *gpio[8];
 	volatile u32 *icb;
 	volatile u32 *pwr;
+	volatile u32 *rtc;
 	volatile u32 *syscfg;
 	volatile u32 *iwdg;
 	volatile u32 *ramcfg;
@@ -319,7 +321,7 @@ int _stm32_rccGetIPClk(unsigned int ipclk, unsigned int *setting_out)
 static int _stm32_getDevClockRegShift(int dev, unsigned int *shift_out)
 {
 	unsigned int reg = dev / 32;
-	if (reg > (rcc_apb3enr - rcc_ahb1enr1)) {
+	if (reg > (rcc_bdcr - rcc_ahb1enr1)) {
 		return -1;
 	}
 
@@ -345,11 +347,13 @@ int _stm32_rccSetDevClock(int dev, u32 status, u32 lpStatus)
 		*(stm32_common.rcc + reg + rcc_ahb1enr1) &= ~(1 << shift);
 	}
 
-	if (lpStatus != 0) {
-		*(stm32_common.rcc + reg + rcc_ahb1slpenr1) |= (1 << shift);
-	}
-	else {
-		*(stm32_common.rcc + reg + rcc_ahb1slpenr1) &= ~(1 << shift);
+	if (dev != pctl_rtc) {
+		if (lpStatus != 0) {
+			*(stm32_common.rcc + reg + rcc_ahb1slpenr1) |= (1 << shift);
+		}
+		else {
+			*(stm32_common.rcc + reg + rcc_ahb1slpenr1) &= ~(1 << shift);
+		}
 	}
 
 	hal_cpuDataSyncBarrier();
@@ -397,7 +401,7 @@ int _stm32_dbgmcuStopTimerInDebug(int dev, u32 stop)
 {
 	u32 reg;
 	volatile u32 *base = DBGMCU_BASE;
-	if ((pctl_tim2 <= dev) && (dev <= pctl_rtc)) {
+	if ((pctl_tim2 <= dev) && (dev <= pctl_rtcapb)) {
 		reg = (u32)dbgmcu_apb1lfzr;
 	}
 	else if (dev == pctl_lptim2) {
@@ -489,6 +493,84 @@ int _stm32_gpioConfig(int d, u8 pin, u8 mode, u8 af, u8 otype, u8 ospeed, u8 pup
 }
 
 
+/* Real time clock */
+
+
+static void _stm32_rtcInit(void)
+{
+	u32 t = 0;
+
+	/* Enable LSI clock */
+	*(stm32_common.rcc + rcc_csr) |= (1U << 0); /* LSION */
+	hal_cpuDataMemoryBarrier();
+	while ((*(stm32_common.rcc + rcc_csr) & (1U << 1)) == 0) {
+		/* Wait for LSIRDY */
+	}
+
+	/* Unlock backup domain register */
+	*(stm32_common.pwr + pwr_dbpr) = (1U << 0); /* DBP */
+	hal_cpuDataMemoryBarrier();
+	while ((*(stm32_common.pwr + pwr_dbpr) & (1U << 0)) == 0) {
+		/* Wait for DBP */
+	}
+
+	/* Configure RTC clock source */
+	if (((*(stm32_common.rcc + rcc_bdcr) >> 8) & 0x3) != 2) {
+		*(stm32_common.rcc + rcc_bdcr) |= (1 << 16); /* enter BDRST */
+		hal_cpuDataMemoryBarrier();
+
+		*(stm32_common.rcc + rcc_bdcr) &= ~(1 << 16); /* exit BDRST */
+		hal_cpuDataMemoryBarrier();
+
+		t = *(stm32_common.rcc + rcc_bdcr) & ~(0x3 << 8); /* mask RTCSEL */
+		*(stm32_common.rcc + rcc_bdcr) = t | (2 << 8);    /* RTCSEL -> LSI */
+		hal_cpuDataMemoryBarrier();
+	}
+
+	/* Enable RTC device */
+	_stm32_rccSetDevClock(pctl_rtcapb, 1, 1);
+	_stm32_rccSetDevClock(pctl_rtc, 1, 1);
+	hal_cpuDataMemoryBarrier();
+
+	/* Unlock RTC registers */
+	*(stm32_common.rtc + rtc_wpr) = 0xca;
+	*(stm32_common.rtc + rtc_wpr) = 0x53;
+	hal_cpuDataMemoryBarrier();
+
+	/* Enter initialization mode */
+	*(stm32_common.rtc + rtc_icsr) |= (1U << 7); /* INIT */
+	hal_cpuDataMemoryBarrier();
+	while ((*(stm32_common.rtc + rtc_icsr) & (1U << 6)) == 0U) {
+		/* Wait for INITF */
+	}
+
+	/* Set RTC prescaler to 32'000 (LSI) */
+	t = *(stm32_common.rtc + rtc_prer) & ~(0x7fUL << 16); /* PREDIV_A */
+	*(stm32_common.rtc + rtc_prer) = t | ((128U - 1) << 16);
+	t = *(stm32_common.rtc + rtc_prer) & ~0x7fffU; /* PREDIV_S */
+	*(stm32_common.rtc + rtc_prer) = t | (250U - 1);
+
+	/* Reset RTC interrupt bits */
+	*(stm32_common.rtc + rtc_cr) &= ~((1UL << 14) | (1UL << 10)); /* WUTIE | WUTE */
+
+	/* Turn on shadow register bypass */
+	*(stm32_common.rtc + rtc_cr) |= (1U << 5); /* BYPSHAD */
+
+	/* Select RTC/16 wakeup clock */
+	*(stm32_common.rtc + rtc_cr) &= ~0x7U; /* WUCKSEL */
+
+	/* Exit initialization mode */
+	*(stm32_common.rtc + rtc_icsr) &= ~(1U << 7); /* INIT */
+	hal_cpuDataMemoryBarrier();
+
+	/* Lock RTC registers */
+	*(stm32_common.rtc + rtc_wpr) = 0xff;
+
+	/* Reset DBP bit */
+	*(stm32_common.pwr + pwr_dbpr) = (0U << 0); /* DBP */
+}
+
+
 /* Watchdog */
 
 
@@ -526,6 +608,7 @@ void _stm32_init(void)
 	stm32_common.iwdg = IWDG_BASE;
 	stm32_common.pwr = PWR_BASE;
 	stm32_common.rcc = RCC_BASE;
+	stm32_common.rtc = RTC_BASE;
 	stm32_common.syscfg = SYSCFG_BASE;
 	stm32_common.gpio[0] = GPIOA_BASE;
 	stm32_common.gpio[1] = GPIOB_BASE;
@@ -558,5 +641,6 @@ void _stm32_init(void)
 		(void)_stm32_rccSetDevClock(i, 1U, 1U);
 	}
 
+	_stm32_rtcInit();
 	_stm32_wdgInit();
 }
