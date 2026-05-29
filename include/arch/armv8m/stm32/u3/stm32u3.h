@@ -18,6 +18,7 @@
 #define _PH_ARCH_STM32U3_H_
 
 
+#define PCTL_HAS_ITRACE
 #define PCTL_REBOOT_MAGIC 0xaa55aa55UL
 
 /* Clock Enable Register relative to AHB1ENR1, encoded with device bit */
@@ -264,6 +265,7 @@ typedef struct {
 		pctl_cleanInvalDCache,
 		pctl_cleanDCache,
 		pctl_dmaLinkBaseAddr,
+		pctl_iTrace,
 	} type;
 
 	union {
@@ -299,6 +301,12 @@ typedef struct {
 			void *addr;
 			unsigned int sz;
 		} opDCache;
+		struct {
+			unsigned int sz;
+			unsigned *counters;
+			long long *ticks;
+			unsigned long enabled[8];
+		} iTrace;
 	};
 } __attribute__((packed)) platformctl_t;
 

@@ -55,6 +55,9 @@
 #define DMA_CHANNELS 12U
 
 
+extern void hal_getITrace(unsigned *sz, unsigned **counters, time_t **ticks);
+
+
 static struct {
 	volatile u32 *rcc;
 	volatile u32 *gpio[8];
@@ -164,6 +167,22 @@ int hal_platformctl(void *ptr)
 		case pctl_cleanDCache:
 			if (data->action == pctl_set) {
 				_hal_scsDCacheCleanAddr(data->opDCache.addr, data->opDCache.sz);
+				ret = EOK;
+			}
+			break;
+		case pctl_iTrace:
+			if (data->action == pctl_get) {
+				unsigned sz;
+				unsigned *counters;
+				time_t *ticks;
+				hal_getITrace(&sz, &counters, &ticks);
+				data->iTrace.sz = sz;
+				data->iTrace.counters = counters;
+				data->iTrace.ticks = ticks;
+
+				for (int i = 0; i < 8; i++) {
+					data->iTrace.enabled[i] = ((const u32 *)0xE000E180)[i];
+				}
 				ret = EOK;
 			}
 			break;

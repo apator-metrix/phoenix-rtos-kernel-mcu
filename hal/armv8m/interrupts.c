@@ -29,12 +29,28 @@
 static struct {
 	spinlock_t spinlock;
 	intr_handler_t *handlers[SIZE_INTERRUPTS];
-	unsigned int counters[SIZE_INTERRUPTS];
+	unsigned int counters[SIZE_INTERRUPTS + 1];
+	long long ticks[SIZE_INTERRUPTS + 1];
 	int trace_irqs;
 } interrupts;
 
 
 int threads_schedule(unsigned int n, cpu_context_t *context, void *arg);
+
+
+static u32 _systickDiff(u32 start, u32 end)
+{
+	if (end > start) {
+		u64 load = ((u64)SYSTICK_INTERVAL * (u64)_stm32_rccGetCPUClock()) / 1000000U;
+		if (load > 0x00ffffffU) {
+			return __UINT32_MAX__;
+		}
+
+		start += (u32)load;
+	}
+
+	return start - end;
+}
 
 
 /* parasoft-begin-suppress MISRAC2012-RULE_2_2 MISRAC2012-RULE_8_4 "Function is used externally within assembler code" */
@@ -44,6 +60,8 @@ void interrupts_dispatch(unsigned int n, cpu_context_t *ctx)
 	int reschedule = 0;
 	spinlock_ctx_t sc;
 	int trace;
+
+	u32 timestamp = _hal_scsSystickGetCount(NULL);
 
 	if (n >= SIZE_INTERRUPTS) {
 		return;
@@ -74,6 +92,10 @@ void interrupts_dispatch(unsigned int n, cpu_context_t *ctx)
 	if (trace != 0) {
 		trace_eventInterruptExit(n);
 	}
+
+	interrupts.ticks[n] = _systickDiff(timestamp, _hal_scsSystickGetCount(NULL));
+	interrupts.ticks[SIZE_INTERRUPTS] += interrupts.ticks[n];
+	interrupts.counters[SIZE_INTERRUPTS]++;
 
 	if (reschedule != 0) {
 		(void)threads_schedule(n, ctx, NULL);
@@ -147,9 +169,12 @@ __attribute__((section(".init"))) void _hal_interruptsInit(void)
 
 	interrupts.trace_irqs = 0;
 
+	interrupts.counters[SIZE_INTERRUPTS] = 0;
+	interrupts.ticks[SIZE_INTERRUPTS] = 0;
 	for (n = 0; n < SIZE_INTERRUPTS; ++n) {
 		interrupts.handlers[n] = NULL;
 		interrupts.counters[n] = 0;
+		interrupts.ticks[n] = 0;
 	}
 
 	hal_spinlockCreate(&interrupts.spinlock, "interrupts.spinlock");
@@ -162,4 +187,11 @@ __attribute__((section(".init"))) void _hal_interruptsInit(void)
 	_hal_scsPriorityGroupingSet(3U);
 
 	return;
+}
+
+void hal_getITrace(unsigned *sz, unsigned **counters, time_t **ticks)
+{
+	*sz = SIZE_INTERRUPTS;
+	*counters = interrupts.counters;
+	*ticks = interrupts.ticks;
 }
