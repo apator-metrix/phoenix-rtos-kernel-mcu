@@ -166,6 +166,9 @@ int _stm32_risaf_configRegion(int risaf, u8 region, u32 start, u32 end, u8 privC
 int _stm32_risaf_init(void);
 
 
+int _stm32_systickInit(u32 interval);
+
+
 void _stm32_init(void);
 
 

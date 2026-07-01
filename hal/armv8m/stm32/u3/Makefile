@@ -7,4 +7,4 @@
 
 CFLAGS += -Ihal/armv8m/stm32/u3
 
-OBJS += $(addprefix $(PREFIX_O)hal/armv8m/stm32/u3/, _init.o stm32u3.o)
+OBJS += $(addprefix $(PREFIX_O)hal/armv8m/stm32/u3/, _init.o stm32u3.o timer.o)
