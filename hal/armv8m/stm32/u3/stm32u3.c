@@ -8,6 +8,7 @@
  * Copyright 2020, 2025 Phoenix Systems
  * Copyright 2026 Apator Metrix
  * Author: Aleksander Kaminski, Pawel Pisarczyk, Jacek Maksymowicz, Mateusz Karcz
+ * Pawel Juszczyk
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -137,6 +138,34 @@ int hal_platformctl(void *ptr)
 						data->dmaLinkBaseAddr.dev,
 						data->dmaLinkBaseAddr.channel,
 						data->dmaLinkBaseAddr.addr);
+			}
+			break;
+		case pctl_regulator:
+			if (data->action == pctl_set) {
+				ret = _stm32_pwrSetRegulator(data->regulator.sel);
+			}
+			else if (data->action == pctl_get) {
+				ret = _stm32_pwrGetRegulator(&state);
+				if (ret == EOK) {
+					data->regulator.sel = state;
+				}
+			}
+			else {
+				/* No action required */
+			}
+			break;
+		case pctl_cpuvolt:
+			if (data->action == pctl_set) {
+				ret = _stm32_pwrSetVoltRange(data->cpuvolt.range);
+			}
+			else if (data->action == pctl_get) {
+				ret = _stm32_pwrGetVoltRange(&state);
+				if (ret == EOK) {
+					data->cpuvolt.range = state;
+				}
+			}
+			else {
+				/* No action required */
 			}
 			break;
 		default:
@@ -543,6 +572,83 @@ void _stm32_pwrEnterLPStop(time_t us)
 	_hal_scsDeepSleepSet(1); /* Switch to deep sleep mode */
 	hal_cpuHalt();           /* WFI enters Stop mode */
 	_hal_scsDeepSleepSet(0); /* Switch to shallow sleep mode */
+}
+
+
+/* Core voltage regulator selection (RM0487 9.3.3, 9.5.3, 9.5.13) */
+
+
+int _stm32_pwrSetRegulator(unsigned int sel)
+{
+	u32 t;
+
+	if ((sel != (unsigned int)pctl_regulator_ldo) && (sel != (unsigned int)pctl_regulator_smps)) {
+		return -EINVAL;
+	}
+
+	t = *(stm32_common.pwr + pwr_cr3) & ~(1U << 1); /* REGSEL */
+	t |= sel << 1;
+	*(stm32_common.pwr + pwr_cr3) = t;
+	hal_cpuDataMemoryBarrier();
+
+	return EOK;
+}
+
+
+int _stm32_pwrGetRegulator(unsigned int *sel)
+{
+	*sel = (*(stm32_common.pwr + pwr_sr) >> 1) & 1U; /* REGS */
+	return EOK;
+}
+
+
+/* Core voltage scaling range selection (RM0487 9.3.3, 9.5.4) */
+
+
+int _stm32_pwrSetVoltRange(unsigned int range)
+{
+	u32 t;
+
+	if ((range != (unsigned int)pctl_voltRange1) && (range != (unsigned int)pctl_voltRange2)) {
+		return -EINVAL;
+	}
+
+	/* R1EN (bit 0) and R2EN (bit 1) must hold opposite values; writing them equal is ignored. */
+	t = *(stm32_common.pwr + pwr_vosr) & ~(0x3U); /* R2EN | R1EN */
+	if (range == (unsigned int)pctl_voltRange1) {
+		t |= (1U << 0); /* R1EN */
+	}
+	else {
+		t |= (1U << 1); /* R2EN */
+	}
+	*(stm32_common.pwr + pwr_vosr) = t;
+	hal_cpuDataMemoryBarrier();
+
+	/* Wait until the selected range is ready (R1RDY for range 1, R2RDY for range 2) */
+	if (range == (unsigned int)pctl_voltRange1) {
+		while ((*(stm32_common.pwr + pwr_vosr) & (1U << 16)) == 0U) {
+			/* Wait for R1RDY */
+		}
+	}
+	else {
+		while ((*(stm32_common.pwr + pwr_vosr) & (1U << 17)) == 0U) {
+			/* Wait for R2RDY */
+		}
+	}
+
+	return EOK;
+}
+
+
+int _stm32_pwrGetVoltRange(unsigned int *range)
+{
+	if ((*(stm32_common.pwr + pwr_vosr) & (1U << 0)) != 0U) { /* R1EN */
+		*range = (unsigned int)pctl_voltRange1;
+	}
+	else {
+		*range = (unsigned int)pctl_voltRange2;
+	}
+	return EOK;
 }
 
 

@@ -6,7 +6,9 @@
  * STM32 basic peripherals control functions
  *
  * Copyright 2017, 2019-2020, 2025 Phoenix Systems
- * Author: Aleksander Kaminski, Pawel Pisarczyk, Jacek Maksymowicz
+ * Copyright 2026 Apator Metrix
+ * Author: Aleksander Kaminski, Pawel Pisarczyk, Jacek Maksymowicz,
+ * Pawel Juszczyk
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -194,6 +196,22 @@ void _stm32_init(void);
 
 #if defined(__CPU_STM32U3)
 void _stm32_pwrEnterLPStop(time_t us);
+
+
+/* Selects the core voltage regulator: 0 - LDO, 1 - SMPS (SMPS packages only) */
+int _stm32_pwrSetRegulator(unsigned int sel);
+
+
+int _stm32_pwrGetRegulator(unsigned int *sel);
+
+
+/* Selects core voltage scaling range (1 or 2).
+ * Does not change SYSCLK, flash wait states or the EPOD booster.
+ */
+int _stm32_pwrSetVoltRange(unsigned int range);
+
+
+int _stm32_pwrGetVoltRange(unsigned int *range);
 #endif
 
 
