@@ -7,7 +7,7 @@
  * Based on stm32u3c5xx.h by STMicroelectronics
  *
  * Copyright 2026 Apator Metrix
- * Authors: Mateusz Karcz
+ * Authors: Mateusz Karcz, Pawel Juszczyk
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -248,6 +248,20 @@ enum {
 };
 
 
+/* STM32U3 core voltage regulator selection (PWR_CR3 REGSEL): 0 - LDO, 1 - SMPS */
+enum {
+	pctl_regulator_ldo = 0,
+	pctl_regulator_smps = 1,
+};
+
+
+/* STM32U3 core voltage scaling range (PWR_VOSR): range 1 high-performance, range 2 low-power */
+enum {
+	pctl_voltRange1 = 1,
+	pctl_voltRange2 = 2,
+};
+
+
 typedef struct {
 	enum {
 		pctl_set = 0,
@@ -261,6 +275,8 @@ typedef struct {
 		pctl_reboot,
 		pctl_dmaPermissions,
 		pctl_dmaLinkBaseAddr,
+		pctl_regulator, /* Core voltage regulator selection (LDO/SMPS) */
+		pctl_cpuvolt,   /* Core voltage scaling range selection (range 1/2) */
 	} type;
 
 	union {
@@ -292,6 +308,12 @@ typedef struct {
 			unsigned int magic;
 			unsigned int reason;
 		} reboot;
+		struct {
+			unsigned int sel; /* one of pctl_regulator_* : 0 - LDO, 1 - SMPS */
+		} regulator;
+		struct {
+			unsigned int range; /* one of pctl_voltRange* : 1 or 2 */
+		} cpuvolt;
 	};
 } __attribute__((packed)) platformctl_t;
 
